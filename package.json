@@ -206,10 +206,6 @@
     "lint-staged": {
         "!(*.ts|*.tsx|*.js|*.yml)": [
             "oxfmt --no-error-on-unmatched-pattern"
-        ],
-        "*.{ts,tsx,js,yml}": [
-            "eslint --cache --fix --concurrency auto",
-            "oxfmt --no-error-on-unmatched-pattern"
         ]
     },
     "engines": {
@@ -254,5 +250,14 @@
         "patchedDependencies": {
             "rss-parser@3.13.0": "patches/rss-parser@3.13.0.patch"
         }
+    },
+    "lint-staged-original": {
+        "!(*.ts|*.tsx|*.js|*.yml)": [
+            "oxfmt --no-error-on-unmatched-pattern"
+        ],
+        "*.{ts,tsx,js,yml}": [
+            "eslint --cache --fix --concurrency auto",
+            "oxfmt --no-error-on-unmatched-pattern"
+        ]
     }
 }
