@@ -22,6 +22,8 @@
 
 10. **Maintainer GitHub ID**: The `maintainers` field must contain valid GitHub usernames. Verify that the username exists before adding it.
 
+11. **Custom Routes Directory**: For BeesHub custom routes, place new routes in `lib/routes-beeshub/{namespace}/` instead of `lib/routes/{namespace}/`. This is the default location for new route development.
+
 ### Code Style
 
 11. **Naming Convention**: Use `camelCase` for variable names in JavaScript/TypeScript. Avoid `snake_case` (e.g., use `videoUrl` instead of `video_url`).

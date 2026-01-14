@@ -71,6 +71,12 @@ if (config.isPackage) {
                 namespaces = namespaces.default;
             }
             break;
+        case 'dev-beeshub':
+            modules = directoryImport({
+                targetDirectoryPath: path.join(__dirname, './routes-beeshub'),
+                importPattern: /\.tsx?$/,
+            }) as typeof modules;
+            break;
         default:
             modules = directoryImport({
                 targetDirectoryPath: path.join(__dirname, './routes'),
