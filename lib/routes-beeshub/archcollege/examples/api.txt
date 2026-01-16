@@ -1,0 +1,17 @@
+
+posts:
+https://www.archcollege.com/wp-json/wp/v2/posts?order_by=date&order=desc&per_page=2&_fields=id,date,title,link,categories,tags,excerpt,featured_media
+
+posts-embed:
+https://www.archcollege.com/wp-json/wp/v2/posts?order_by=date&order=desc&per_page=2&_fields=id,date,title,link,categories,tags,excerpt,_embedded,_links.wp:featuredmedia,_links.author&_embed
+
+
+categories:
+https://www.archcollege.com/wp-json/wp/v2/categories?_fields=id,name&include=27,8,66428
+
+tags:
+https://www.archcollege.com/wp-json/wp/v2/tags?_fields=id,name&include=69347,69348,69307,69954,68731
+
+featured_media:
+https://www.archcollege.com/wp-json/wp/v2/media?_fields=id,media_details&include=94807,94763
+

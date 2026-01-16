@@ -272,7 +272,7 @@ export default [
             '@stylistic/comma-style': 'error',
             '@stylistic/function-call-spacing': 'error',
             '@stylistic/keyword-spacing': 'off',
-            '@stylistic/linebreak-style': 'error',
+            '@stylistic/linebreak-style': 'off',
 
             '@stylistic/lines-around-comment': [
                 'error',

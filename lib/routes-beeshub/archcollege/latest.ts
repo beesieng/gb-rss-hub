@@ -1,10 +1,4 @@
-import { load } from 'cheerio';
-import sanitizeHtml from 'sanitize-html';
-
 import type { Route } from '@/types';
-import { solveAntiCC } from '@/utils/anticc';
-import cache from '@/utils/cache';
-import logger from '@/utils/logger';
 import ofetch from '@/utils/ofetch';
 import { parseDate } from '@/utils/parse-date';
 import timezone from '@/utils/timezone';
@@ -34,97 +28,77 @@ export const route: Route = {
     maintainers: [],
     handler: async () => {
         const rootUrl = 'https://www.archcollege.com';
-        const headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6',
-            'Referer': rootUrl,
+
+        // Fetch latest 100 posts
+        const posts = await ofetch(`${rootUrl}/wp-json/wp/v2/posts`, {
+            query: {
+                order_by: 'date',
+                order: 'desc',
+                per_page: 100,
+                _fields: 'id,date,title,link,categories,tags,excerpt,featured_media',
+            },
+        });
+
+        // Collect unique IDs
+        const categoryIds = [...new Set(posts.flatMap((post) => post.categories))];
+        const tagIds = [...new Set(posts.flatMap((post) => post.tags))];
+        const mediaIds = [...new Set(posts.map((post) => post.featured_media).filter(Boolean))];
+
+        // Batch fetch categories, tags, and media with pagination
+        const fetchWithPagination = async (endpoint: string, ids: number[]) => {
+            const promises = [];
+            for (let i = 0; i < ids.length; i += 100) {
+                const batchIds = ids.slice(i, i + 100);
+                promises.push(
+                    ofetch(`${rootUrl}${endpoint}`, {
+                        query: {
+                            _fields: endpoint.includes('media') ? 'id,media_details' : 'id,name',
+                            per_page: 100,
+                            include: batchIds.join(','),
+                        },
+                    })
+                );
+            }
+            const results = await Promise.all(promises);
+            return results.flat();
         };
 
-        let response = await ofetch(rootUrl, { headers });
-        const antiCCUrl = solveAntiCC(response);
-        if (antiCCUrl) {
-            const redirectUrl = antiCCUrl.startsWith('http') ? antiCCUrl : new URL(antiCCUrl, rootUrl).href;
-            response = await ofetch(redirectUrl, { headers });
-        }
+        const [categories, tags, medias] = await Promise.all([
+            categoryIds.length ? fetchWithPagination('/wp-json/wp/v2/categories', categoryIds) : [],
+            tagIds.length ? fetchWithPagination('/wp-json/wp/v2/tags', tagIds) : [],
+            mediaIds.length ? fetchWithPagination('/wp-json/wp/v2/media', mediaIds) : [],
+        ]);
 
-        const $ = load(response);
-        const list = $('.post-loop-image .item')
-            .toArray()
-            .map((item) => {
-                const $item = $(item);
-                const linkElem = $item.find('.item-wrap, .item-thumb').first();
-                const title = $item.find('.item-title').text().trim() || linkElem.attr('title') || '';
-                const link = linkElem.attr('href');
+        // Create maps for quick lookup
+        const categoryMap = new Map(categories.map((cat) => [cat.id, cat.name]));
+        const tagMap = new Map(tags.map((tag) => [tag.id, tag.name]));
+        const mediaMap = new Map(medias.map((media) => [media.id, media.media_details]));
 
-                const itemImg = $item.find('.item-img, .item-thumb');
-                const thumb = itemImg.attr('data-original') || itemImg.find('img').attr('data-original') || itemImg.find('img').attr('data-src') || itemImg.find('img').attr('src');
+        // Build items
+        const items = posts.map((post) => {
+            const pubDate = parseDate(post.date);
+            const categoryNames = post.categories.map((id) => categoryMap.get(id)).filter(Boolean);
+            const tagNames = post.tags.map((id) => tagMap.get(id)).filter(Boolean);
+            const media = mediaMap.get(post.featured_media);
+            const thumbnailUrl = media?.sizes?.['post-thumbnail']?.source_url || (media?.file ? `https://www.archcollege.com/wp-content/uploads/${media.file}` : undefined);
+            const images = thumbnailUrl ? [{ src: thumbnailUrl }] : [];
 
-                const author = $item.find('.item-meta-author').text().trim();
-                const category = $item.find('.item-category').text().trim();
-
-                return {
-                    title: title.startsWith('置顶') ? title.slice(2).trimStart() : title,
-                    link,
-                    author,
-                    category,
-                    thumb,
-                };
-            })
-            .filter((item) => item.link);
-        // logger.debug(list);
-
-        const items = await Promise.all(
-            list.map((item) =>
-                cache.tryGet(item.link!, async () => {
-                    let detailResponse = await ofetch(item.link!, { headers });
-                    const antiCCUrl = solveAntiCC(detailResponse);
-                    if (antiCCUrl) {
-                        const redirectUrl = antiCCUrl.startsWith('http') ? antiCCUrl : new URL(antiCCUrl, item.link!).href;
-                        detailResponse = await ofetch(redirectUrl, { headers });
-                    }
-                    const $detail = load(detailResponse);
-
-                    // Extract date
-                    const dateStr = $detail('time.entry-date').attr('datetime') || $detail('time').attr('datetime');
-                    const pubDate = dateStr ? parseDate(dateStr) : undefined;
-
-                    // Extract summary
-                    const summary = $detail('.entry-excerpt.entry-summary').html() || '';
-
-                    // Extract innermost entry-content
-                    let $content = $detail('.entry-content');
-                    while ($content.find('.entry-content').length > 0) {
-                        $content = $content.find('.entry-content').first();
-                    }
-
-                    // Clean up content
-                    $content.find('.elementor-icon-list-icon > svg').remove();
-
-                    const contentHtml = $content.html() || '';
-                    // logger.debug(sanitizeHtml.defaults.allowedTags)
-                    // const contentHtml = sanitizeHtml($content.html() || '', { allowedTags: [...sanitizeHtml.defaults.allowedTags, 'img'] });
-
-                    // Extract author if not found in list
-                    const author = item.author || $detail('.nickname').text().trim() || $detail('.entry-meta-author').text().trim();
-
-                    return {
-                        title: item.title,
-                        link: item.link,
-                        author,
-                        category: item.category ? [item.category] : [],
-                        pubDate: pubDate ? timezone(pubDate, +8) : undefined,
-                        description: renderDescription({
-                            images: item.thumb ? [{ src: item.thumb }] : [],
-                            description: (summary ? `<blockquote>${summary}</blockquote>` : '') + contentHtml,
-                        }),
-                    };
-                })
-            )
-        );
+            return {
+                guid: 'archcollege-post-' + post.id,
+                title: post.title.rendered,
+                link: post.link,
+                pubDate: pubDate ? timezone(pubDate, +8) : undefined,
+                category: [...categoryNames, ...tagNames],
+                description: renderDescription({
+                    images,
+                    description: post.excerpt.rendered,
+                }),
+                image: thumbnailUrl
+            };
+        });
 
         return {
-            title: 'ArchCollege - 今日最新',
+            title: 'ArchCollege建筑学院',
             link: rootUrl,
             item: items,
         };
